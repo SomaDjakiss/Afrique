@@ -1,4 +1,5 @@
 streamlit
+streamlit-javascript
 pymongo
 pandas
 numpy
@@ -9,3 +10,4 @@ seaborn
 wordcloud
 setuptools>=42
 wheel
+
