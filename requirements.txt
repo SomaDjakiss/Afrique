@@ -8,6 +8,6 @@ nltk
 matplotlib
 seaborn
 wordcloud
+textblob
 setuptools>=42
 wheel
-
