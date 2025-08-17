@@ -21,6 +21,22 @@ st.set_page_config(page_title="Wiki Survey", layout="wide", page_icon="🗳️")
 #MONGO_URI = "mongodb://localhost:27017/"
 MONGO_URI = "mongodb://mongo:JiwSbeZEXWiILqHARYsOnvkCOenDSKoY@shuttle.proxy.rlwy.net:28806"
 DB_NAME = "Africa"
+
+# 🔧 FONCTION POUR CONVERTIR LES ObjectId
+def convertir_objectid_pour_streamlit(donnees):
+    """Convertit les ObjectId MongoDB en string pour éviter les erreurs Arrow/Streamlit"""
+    if isinstance(donnees, list):
+        for item in donnees:
+            if isinstance(item, dict):
+                for key, value in item.items():
+                    if hasattr(value, '__class__') and 'ObjectId' in str(type(value)):
+                        item[key] = str(value)
+    elif isinstance(donnees, dict):
+        for key, value in donnees.items():
+            if hasattr(value, '__class__') and 'ObjectId' in str(type(value)):
+                donnees[key] = str(value)
+    return donnees
+
 # --- Connexion à MongoDB ---
 @st.cache_resource
 def get_db_connection():
@@ -58,13 +74,11 @@ def init_database():
         db.sentiment_analytics.create_index("id_question", unique=True)
 
         # Insérer des données de test (administrateur et utilisateur avec droit d'image)
-        # ATTENTION: Dans une application réelle, le mot de passe ne devrait pas être stocké en clair.
-        # Utilisez une bibliothèque de hachage comme `bcrypt` pour plus de sécurité.
         db.login.update_one(
             {"email": "admin@test.com"},
             {"$set": {
                 "email": "admin@test.com",
-                "mot_de_passe": "admin123", # Mot de passe de démonstration
+                "mot_de_passe": "admin123", 
                 "date_creation": datetime.now()
             }},
             upsert=True
@@ -75,7 +89,7 @@ def init_database():
             {"email": "yinnaasome@gmail.com"},
             {"$set": {
                 "email": "yinnaasome@gmail.com",
-                "mot_de_passe": "abc", # Mot de passe de démonstration
+                "mot_de_passe": "abc", 
                 "date_creation": datetime.now()
             }},
             upsert=True
@@ -87,6 +101,32 @@ def init_database():
     except Exception as e:
         print(f"❌ Erreur initialisation MongoDB: {e}")
         return False
+
+# 🔧 FONCTION DE VÉRIFICATION ET CORRECTION DES DONNÉES
+def verifier_et_corriger_donnees():
+    """Vérifie et corrige les données manquantes dans la base"""
+    db = get_db_connection()
+    
+    # Corriger les idées sans champ creer_par_utilisateur
+    idees_sans_champ = db.idees.count_documents({"creer_par_utilisateur": {"$exists": False}})
+    if idees_sans_champ > 0:
+        db.idees.update_many(
+            {"creer_par_utilisateur": {"$exists": False}},
+            {"$set": {"creer_par_utilisateur": "non"}}
+        )
+        print(f"✅ Corrigé {idees_sans_champ} idées sans champ 'creer_par_utilisateur'")
+    
+    # Corriger les idées sans sentiment
+    idees_sans_sentiment = db.idees.count_documents({"sentiment_score": {"$exists": False}})
+    if idees_sans_sentiment > 0:
+        db.idees.update_many(
+            {"sentiment_score": {"$exists": False}},
+            {"$set": {
+                "sentiment_score": 0.0,
+                "sentiment_label": "Non analysé"
+            }}
+        )
+        print(f"✅ Corrigé {idees_sans_sentiment} idées sans analyse de sentiment")
 
 # === Analyse de sentiment ===
 def analyze_sentiment(text):
@@ -162,6 +202,9 @@ if not init_database():
     st.error("❌ Erreur initialisation MongoDB")
     st.stop()
 
+# 🔧 VÉRIFICATION DES DONNÉES
+verifier_et_corriger_donnees()
+
 # Initialiser les clés nécessaires dans session_state
 if "page" not in st.session_state:
     st.session_state["page"] = "home"
@@ -232,7 +275,7 @@ def init_navigateur():
 init_navigateur()
 
 # =============================================================
-# === FONCTIONS D'AUTHENTIFICATION (DÉPLACÉES EN HAUT) ===
+# === FONCTIONS D'AUTHENTIFICATION ===
 # =============================================================
 
 def creer_compte():
@@ -253,7 +296,7 @@ def creer_compte():
             st.error("Les mots de passe ne correspondent pas.")
             return
 
-        # Vérifier si l'email existe déjà
+        # Vérifier si l'email existe déjà 
         if db.login.find_one({"email": email_reg}):
             st.error("Cet email est déjà utilisé. Veuillez vous connecter.")
             return
@@ -291,14 +334,14 @@ def login_page():
             st.session_state.utilisateur_id = str(utilisateur["_id"])
             st.session_state.email = utilisateur["email"]
             st.success(f"✅ Bienvenue {st.session_state.email} !")
-            time.sleep(1) # Ajout d'un petit délai pour la lisibilité
+            time.sleep(1)
             st.rerun()
         else:
             st.error("❌ Identifiants incorrects")
 
 def authentication_flow():
     """Gère la connexion et la création de compte via des onglets"""
-    tab_login, tab_register = st.tabs(["🔒 Se connecter", "✍️ Créer un compte"])
+    tab_login, tab_register = st.tabs(["🔒 Se connecter", "✏️ Créer un compte"])
 
     with tab_login:
         login_page()
@@ -306,13 +349,9 @@ def authentication_flow():
     with tab_register:
         creer_compte()
 
-# =============================================================
-# === FIN DES FONCTIONS D'AUTHENTIFICATION ===
-# =============================================================
-
 # === Fonctions principales adaptées pour MongoDB ===
 def creer_question():
-    st.header("✍️ Créer une nouvelle question")
+    st.header("✏️ Créer une nouvelle question")
 
     # Vérifier si l'utilisateur est connecté, sinon afficher la page d'authentification
     if not st.session_state.get("auth"):
@@ -332,7 +371,7 @@ def creer_question():
             # Insérer la question
             question_data = {
                 "question": question,
-                "createur_id": st.session_state.utilisateur_id, # Utiliser l'ID de l'utilisateur connecté
+                "createur_id": st.session_state.utilisateur_id,
                 "date_creation": datetime.now()
             }
             question_id = db.question.insert_one(question_data).inserted_id
@@ -519,123 +558,111 @@ def afficher_formulaire_profil():
         })
         st.success("✅ Profil enregistré avec succès.")
 
+# 🔧 FONCTION VOIR_RESULTATS COMPLÈTEMENT CORRIGÉE
 def voir_resultats():
     st.title("📊 Résultats des votes par question")
 
     db = get_db_connection()
 
-    # Pipeline d'agrégation pour les résultats
-    pipeline = [
-        {"$lookup": {
-            "from": "idees",
-            "localField": "_id",
-            "foreignField": "id_question",
-            "as": "idees"
-        }},
-        {"$unwind": "$idees"},
-        {"$lookup": {
-            "from": "vote",
-            "let": {"idee_id": "$idees._id", "question_id": "$_id"},
-            "pipeline": [
-                {"$match": {
-                    "$expr": {
-                        "$or": [
-                            {"$eq": ["$id_idee_gagnant", "$$idee_id"]},
-                            {"$eq": ["$id_idee_perdant", "$$idee_id"]}
-                        ]
-                    }
-                }}
-            ],
-            "as": "votes"
-        }},
-        {"$project": {
-            "question": "$question",
-            "idee_texte": "$idees.idee_texte",
-            "creer_par_utilisateur": "$idees.creer_par_utilisateur",
-            "sentiment_score": "$idees.sentiment_score",
-            "sentiment_label": "$idees.sentiment_label",
-            "victoires": {"$sum": {"$cond": [{"$eq": ["$votes.id_idee_gagnant", "$idees._id"]}, 1, 0]}},
-            "defaites": {"$sum": {"$cond": [{"$eq": ["$votes.id_idee_perdant", "$idees._id"]}, 1, 0]}}
-        }},
-        {"$group": {
-            "_id": {
-                "question_id": "$_id",
-                "question": "$question",
-                "idee_id": "$idees._id",
-                "idee_texte": "$idees.idee_texte",
-                "creer_par_utilisateur": "$idees.creer_par_utilisateur",
-                "sentiment_score": "$idees.sentiment_score",
-                "sentiment_label": "$idees.sentiment_label"
+    try:
+        # Étape 1: Récupérer toutes les questions avec leurs idées
+        questions_avec_idees = list(db.question.aggregate([
+            {
+                "$lookup": {
+                    "from": "idees",
+                    "localField": "_id",
+                    "foreignField": "id_question",
+                    "as": "idees"
+                }
             },
-            "victoires": {"$sum": "$victoires"},
-            "defaites": {"$sum": "$defaites"}
-        }},
-        {"$group": {
-            "_id": "$_id.question_id",
-            "question": {"$first": "$_id.question"},
-            "idees": {
-                "$push": {
-                    "id_idee": "$_id.idee_id",
-                    "idee_texte": "$_id.idee_texte",
-                    "creer_par_utilisateur": "$_id.creer_par_utilisateur",
-                    "sentiment_score": "$_id.sentiment_score",
-                    "sentiment_label": "$_id.sentiment_label",
-                    "victoires": "$victoires",
-                    "defaites": "$defaites"
+            {
+                "$match": {
+                    "idees": {"$ne": []}  # Seulement les questions qui ont des idées
                 }
             }
-        }},
-        {"$sort": {"_id": 1}}
-    ]
+        ]))
 
-    resultats = list(db.question.aggregate(pipeline))
+        if not questions_avec_idees:
+            st.warning("Aucune question avec des idées trouvée.")
+            return
 
-    # Organiser par question
-    questions = {}
-    for row in resultats:
-        qid = row["_id"]
-        questions[qid] = {
-            "question": row["question"],
-            "idees": row["idees"]
-        }
+        # Traitement de chaque question
+        for question_doc in questions_avec_idees:
+            question_id = question_doc["_id"]
+            question_text = question_doc["question"]
+            idees = question_doc["idees"]
 
-    # Affichage
-    for qid, bloc in questions.items():
-        st.markdown(f"## ❓ {bloc['question']}")
+            st.markdown(f"## ❓ {question_text}")
 
-        data = []
-        for idee in bloc["idees"]:
-            victoires = float(idee["victoires"])
-            defaites = float(idee["defaites"])
-            total = victoires + defaites
-            score = round((victoires / total) * 100, 2) if total > 0 else 0.0
+            # Calculer les statistiques de vote pour chaque idée
+            data = []
+            for idee in idees:
+                idee_id = idee["_id"]
+                
+                # Compter les victoires et défaites
+                victoires = db.vote.count_documents({"id_idee_gagnant": idee_id})
+                defaites = db.vote.count_documents({"id_idee_perdant": idee_id})
+                
+                total = victoires + defaites
+                score = round((victoires / total) * 100, 2) if total > 0 else 0.0
 
-            type_idee = "Proposée" if idee["creer_par_utilisateur"] == "oui" else "Initiale"
+                # Utiliser .get() pour tous les champs
+                type_idee = "Proposée" if idee.get("creer_par_utilisateur", "non") == "oui" else "Initiale"
 
-            data.append({
-                "Idée": idee["idee_texte"],
-                "Score": float(score),
-                "Type": type_idee,
-                "Sentiment": idee.get("sentiment_label", "Non analysé"),
-                "Score Sentiment": float(idee.get("sentiment_score", 0.0))
-            })
+                data.append({
+                    "Idée": idee.get("idee_texte", "Idée sans texte"),
+                    "Score": float(score),
+                    "Type": type_idee,
+                    "Sentiment": idee.get("sentiment_label", "Non analysé"),
+                    "Score Sentiment": float(idee.get("sentiment_score", 0.0)),
+                    "Victoires": int(victoires),
+                    "Défaites": int(defaites),
+                    "Total Votes": int(total)
+                })
 
-        df = pd.DataFrame(data).sort_values(by="Score", ascending=False)
+            if not data:
+                st.info("Aucune donnée de vote disponible pour cette question.")
+                continue
 
-        # 🥇 Idée la plus soutenue
-        if not df.empty:
-            meilleure = df.iloc[0]
-            st.success(f"🏅 **Idée la plus soutenue :** _{meilleure['Idée']}_ avec un score de **{meilleure['Score']:.1f}%** (Sentiment: {meilleure['Sentiment']})")
+            # Créer le DataFrame et trier
+            df = pd.DataFrame(data).sort_values(by="Score", ascending=False)
 
-        # 🧾 Tableau enrichi avec sentiment
-        st.markdown("### 📋 Détail des scores avec analyse de sentiment")
-        st.dataframe(df[["Idée", "Score", "Sentiment", "Score Sentiment"]], use_container_width=True)
+            # 🏆 Idée la plus soutenue
+            if not df.empty:
+                meilleure = df.iloc[0]
+                st.success(f"🏆 **Idée la plus soutenue :** _{meilleure['Idée']}_ avec un score de **{meilleure['Score']:.1f}%** (Sentiment: {meilleure['Sentiment']})")
 
-        # 📊 Visualisation comparative avec sentiment
-        st.markdown("### ☁️ Comparaison avec analyse de sentiment")
-        afficher_comparaison_par_score_et_sentiment(df)
+            # 📋 Tableau des résultats
+            st.markdown("### 📋 Détail des scores avec analyse de sentiment")
+            
+            # Afficher les colonnes principales
+            df_display = df[["Idée", "Score", "Type", "Sentiment", "Victoires", "Défaites", "Total Votes"]]
+            st.dataframe(df_display, use_container_width=True)
 
-        st.markdown("---")
+            # 📊 Visualisation
+            st.markdown("### 📊 Graphique des scores")
+            if len(df) > 1:
+                afficher_comparaison_par_score_et_sentiment(df)
+
+            st.markdown("---")
+
+    except Exception as e:
+        st.error(f"❌ Erreur lors de la récupération des résultats : {e}")
+        
+        # Debug: Afficher des informations sur la structure des données
+        st.markdown("### 🔍 Informations de debug")
+        
+        # Vérifier la structure des collections
+        sample_question = db.question.find_one({})
+        sample_idee = db.idees.find_one({})
+        sample_vote = db.vote.find_one({})
+        
+        if sample_question:
+            st.write("**Structure question:**", list(sample_question.keys()))
+        if sample_idee:
+            st.write("**Structure idée:**", list(sample_idee.keys()))
+        if sample_vote:
+            st.write("**Structure vote:**", list(sample_vote.keys()))
 
 def afficher_comparaison_par_score_et_sentiment(df):
     """Graphique comparatif avec scores et sentiments"""
@@ -674,6 +701,7 @@ def afficher_comparaison_par_score_et_sentiment(df):
     combined = alt.hconcat(scatter + hline + vline, hist_sentiment)
     st.altair_chart(combined, use_container_width=True)
 
+# 🔧 FONCTION STATISTIQUES_VOTES CORRIGÉE
 def afficher_statistiques_votes():
     """Dashboard des statistiques de votes pour une question sélectionnée"""
     st.title("📊 Statistiques des Votes")
@@ -698,130 +726,103 @@ def afficher_statistiques_votes():
 
     selected_question_id = question_options[selected_question_text]
 
-    # Pipeline d'agrégation pour les résultats de vote
-    pipeline = [
-        {"$match": {"id_question": selected_question_id}},
-        {"$lookup": {
-            "from": "idees",
-            "localField": "id_idee_gagnant",
-            "foreignField": "_id",
-            "as": "idee_gagnant"
-        }},
-        {"$lookup": {
-            "from": "idees",
-            "localField": "id_idee_perdant",
-            "foreignField": "_id",
-            "as": "idee_perdant"
-        }},
-        {"$unwind": "$idee_gagnant"},
-        {"$unwind": "$idee_perdant"},
-        {"$group": {
-            "_id": None,
-            "total_votes": {"$sum": 1},
-            "idees": {
-                "$push": [
-                    {"id_idee": "$idee_gagnant._id", "idee_texte": "$idee_gagnant.idee_texte", "type": "victoire"},
-                    {"id_idee": "$idee_perdant._id", "idee_texte": "$idee_perdant.idee_texte", "type": "defaite"}
-                ]
-            }
-        }},
-        {"$unwind": "$idees"},
-        {"$group": {
-            "_id": "$idees.id_idee",
-            "idee_texte": {"$first": "$idees.idee_texte"},
-            "victoires": {"$sum": {"$cond": [{"$eq": ["$idees.type", "victoire"]}, 1, 0]}},
-            "defaites": {"$sum": {"$cond": [{"$eq": ["$idees.type", "defaite"]}, 1, 0]}},
-            "total_votes": {"$first": "$total_votes"}
-        }}
-    ]
+    # Version simplifiée pour éviter les erreurs de pipeline
+    try:
+        # Récupérer tous les votes pour cette question
+        votes = list(db.vote.find({"id_question": selected_question_id}))
+        
+        if not votes:
+            st.warning("Aucune donnée de vote disponible pour cette question.")
+            return
 
-    resultats = list(db.vote.aggregate(pipeline))
+        # Récupérer toutes les idées de cette question
+        idees = list(db.idees.find({"id_question": selected_question_id}))
+        
+        # Calculer les statistiques pour chaque idée
+        data_votes = []
+        for idee in idees:
+            idee_id = idee["_id"]
+            victoires = sum(1 for vote in votes if vote["id_idee_gagnant"] == idee_id)
+            defaites = sum(1 for vote in votes if vote["id_idee_perdant"] == idee_id)
+            total = victoires + defaites
+            pourcentage = round((victoires / total) * 100, 1) if total > 0 else 0
 
-    if not resultats:
-        st.warning("Aucune donnée de vote disponible pour cette question.")
-        return
+            # 🔧 CORRECTION : utiliser .get() au lieu d'accès direct
+            type_idee = "Proposée par utilisateur" if idee.get("creer_par_utilisateur", "non") == "oui" else "Idée initiale"
 
-    # Préparer les données pour le graphique
-    data_votes = []
-    for result in resultats:
-        victoires = int(result.get("victoires", 0))
-        defaites = int(result.get("defaites", 0))
-        total = victoires + defaites
-        pourcentage = round((victoires / total) * 100, 1) if total > 0 else 0
+            data_votes.append({
+                'Idée': idee.get('idee_texte', 'Idée sans texte')[:50] + "..." if len(idee.get('idee_texte', '')) > 50 else idee.get('idee_texte', 'Idée sans texte'),
+                'Pourcentage': float(pourcentage),
+                'Victoires': victoires,
+                'Défaites': defaites,
+                'Total': total,
+                'Type': type_idee
+            })
 
-        # Vérifier si l'idée a été créée par un utilisateur
-        idee = db.idees.find_one({"_id": result["_id"]}, {"creer_par_utilisateur": 1})
-        type_idee = "Proposée par utilisateur" if idee and idee.get("creer_par_utilisateur") == "oui" else "Idée initiale"
+        # Affichage des métriques principales
+        if data_votes:
+            col1, col2, col3 = st.columns(3)
 
-        data_votes.append({
-            'Idée': result['idee_texte'][:50] + "..." if len(result['idee_texte']) > 50 else result['idee_texte'],
-            'Pourcentage': float(pourcentage),
-            'Victoires': victoires,
-            'Défaites': defaites,
-            'Total': total,
-            'Type': type_idee
-        })
+            total_votes = sum([d['Total'] for d in data_votes])
+            meilleure_idee = max(data_votes, key=lambda x: x['Pourcentage']) if data_votes else None
+            nb_idees = len(data_votes)
 
-    # Affichage des métriques principales
-    if data_votes:
-        col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📊 Total des votes", int(total_votes))
+            with col2:
+                st.metric("💡 Nombre d'idées", int(nb_idees))
+            with col3:
+                if meilleure_idee:
+                    st.metric("🏆 Meilleur score", f"{float(meilleure_idee['Pourcentage'])}%")
 
-        total_votes = sum([d['Total'] for d in data_votes])
-        meilleure_idee = max(data_votes, key=lambda x: x['Pourcentage'])
-        nb_idees = len(data_votes)
+            # Graphique en barres - Pourcentage de victoires
+            df_votes = pd.DataFrame(data_votes)
 
-        with col1:
-            st.metric("📊 Total des votes", int(total_votes))
-        with col2:
-            st.metric("💡 Nombre d'idées", int(nb_idees))
-        with col3:
-            st.metric("🏆 Meilleur score", f"{float(meilleure_idee['Pourcentage'])}%")
+            chart_bars = alt.Chart(df_votes).mark_bar().encode(
+                x=alt.X('Pourcentage:Q', title='Pourcentage de victoires (%)', scale=alt.Scale(domain=[0, 100])),
+                y=alt.Y('Idée:N', sort='-x', title='Idées'),
+                color=alt.Color('Type:N',
+                              scale=alt.Scale(domain=["Idée initiale", "Proposée par utilisateur"],
+                                            range=["#1f77b4", "#ff7f0e"]),
+                              title="Type d'idée"),
+                tooltip=['Idée:N', 'Pourcentage:Q', 'Victoires:Q', 'Défaites:Q', 'Type:N']
+            ).properties(
+                width=700,
+                height=400,
+                title=f"Pourcentage de victoires par idée"
+            )
 
-        # Graphique en barres - Pourcentage de victoires
-        df_votes = pd.DataFrame(data_votes)
+            st.altair_chart(chart_bars, use_container_width=True)
 
-        chart_bars = alt.Chart(df_votes).mark_bar().encode(
-            x=alt.X('Pourcentage:Q', title='Pourcentage de victoires (%)', scale=alt.Scale(domain=[0, 100])),
-            y=alt.Y('Idée:N', sort='-x', title='Idées'),
-            color=alt.Color('Type:N',
-                          scale=alt.Scale(domain=["Idée initiale", "Proposée par utilisateur"],
-                                        range=["#1f77b4", "#ff7f0e"]),
-                          title="Type d'idée"),
-            tooltip=['Idée:N', 'Pourcentage:Q', 'Victoires:Q', 'Défaites:Q', 'Type:N']
-        ).properties(
-            width=700,
-            height=400,
-            title=f"Pourcentage de victoires par idée"
-        )
+            # Graphique circulaire - Répartition des votes
+            chart_pie = alt.Chart(df_votes).mark_arc(innerRadius=50, outerRadius=120).encode(
+                theta=alt.Theta('Victoires:Q', title='Nombre de victoires'),
+                color=alt.Color('Idée:N', legend=alt.Legend(orient="right")),
+                tooltip=['Idée:N', 'Victoires:Q', 'Pourcentage:Q']
+            ).properties(
+                width=400,
+                height=400,
+                title="Répartition des victoires"
+            )
 
-        st.altair_chart(chart_bars, use_container_width=True)
+            st.altair_chart(chart_pie, use_container_width=True)
 
-        # Graphique circulaire - Répartition des votes
-        chart_pie = alt.Chart(df_votes).mark_arc(innerRadius=50, outerRadius=120).encode(
-            theta=alt.Theta('Victoires:Q', title='Nombre de victoires'),
-            color=alt.Color('Idée:N', legend=alt.Legend(orient="right")),
-            tooltip=['Idée:N', 'Victoires:Q', 'Pourcentage:Q']
-        ).properties(
-            width=400,
-            height=400,
-            title="Répartition des victoires"
-        )
+            # Tableau détaillé
+            st.markdown("### 📋 Détail des résultats")
+            st.dataframe(
+                df_votes[['Idée', 'Pourcentage', 'Victoires', 'Défaites', 'Total', 'Type']],
+                use_container_width=True
+            )
 
-        st.altair_chart(chart_pie, use_container_width=True)
-
-        # Tableau détaillé
-        st.markdown("### 📋 Détail des résultats")
-        st.dataframe(
-            df_votes[['Idée', 'Pourcentage', 'Victoires', 'Défaites', 'Total', 'Type']],
-            use_container_width=True
-        )
+    except Exception as e:
+        st.error(f"❌ Erreur lors de l'analyse des statistiques : {e}")
 
 def afficher_analyse_sentiment_complete():
     """Dashboard complet d'analyse de sentiment avec option de comparaison"""
     st.title("🧠 Analyse de Sentiment Avancée")
 
     # Options de visualisation
-    tab1, tab2 = st.tabs(["📊 Question Individuelle", "🔄 Comparaison Questions"])
+    tab1, tab2 = st.tabs(["📊 Question Individuelle", "📄 Comparaison Questions"])
 
     with tab1:
         afficher_sentiment_question_individuelle()
@@ -865,7 +866,7 @@ def afficher_sentiment_question_individuelle():
         return
 
     # Analyse globale combinée
-    tous_textes = " ".join([i['idee_texte'] for i in idees] + [c['commentaire'] for c in commentaires])
+    tous_textes = " ".join([i.get('idee_texte', '') for i in idees] + [c.get('commentaire', '') for c in commentaires])
     sentiment_global_score, sentiment_global_label = analyze_sentiment(tous_textes)
 
     # Métriques principales
@@ -888,7 +889,7 @@ def afficher_sentiment_question_individuelle():
 
     for idee in idees:
         sentiment_data.append({
-            'Texte': idee['idee_texte'][:100] + "..." if len(idee['idee_texte']) > 100 else idee['idee_texte'],
+            'Texte': (idee.get('idee_texte', '')[:100] + "...") if len(idee.get('idee_texte', '')) > 100 else idee.get('idee_texte', ''),
             'Type': 'Idée',
             'Sentiment': idee.get('sentiment_label', 'Non analysé'),
             'Score': float(idee.get('sentiment_score', 0)),
@@ -897,12 +898,16 @@ def afficher_sentiment_question_individuelle():
 
     for comment in commentaires:
         sentiment_data.append({
-            'Texte': comment['commentaire'][:100] + "..." if len(comment['commentaire']) > 100 else comment['commentaire'],
+            'Texte': (comment.get('commentaire', '')[:100] + "...") if len(comment.get('commentaire', '')) > 100 else comment.get('commentaire', ''),
             'Type': 'Commentaire',
             'Sentiment': comment.get('sentiment_label', 'Non analysé'),
             'Score': float(comment.get('sentiment_score', 0)),
             'Origine': 'Commentaire'
         })
+
+    if not sentiment_data:
+        st.warning("Aucune donnée de sentiment disponible.")
+        return
 
     df_sentiment = pd.DataFrame(sentiment_data)
 
@@ -948,7 +953,7 @@ def afficher_sentiment_question_individuelle():
 
 def afficher_comparaison_sentiment_questions():
     """Comparaison des sentiments entre toutes les questions"""
-    st.markdown("### 🔄 Comparaison Multi-Questions")
+    st.markdown("### 📄 Comparaison Multi-Questions")
 
     db = get_db_connection()
 
@@ -1043,59 +1048,6 @@ def afficher_comparaison_sentiment_questions():
 
         st.altair_chart(chart_comms + rule, use_container_width=True)
 
-    # Graphique radar pour vue globale
-    st.markdown("### 🎯 Vue Globale des Questions")
-
-    # Préparer données pour métriques globales
-    global_metrics = []
-    for row in data_comparison:
-        question_courte = (row['question'][:30] + "...") if len(row['question']) > 30 else row['question']
-        total_elements = (row.get('total_positifs', 0) or 0) + (row.get('total_negatifs', 0) or 0) + (row.get('total_neutres', 0) or 0)
-
-        if total_elements > 0:
-            pourcentage_positif = ((row.get('total_positifs', 0) or 0) / total_elements) * 100
-            pourcentage_negatif = ((row.get('total_negatifs', 0) or 0) / total_elements) * 100
-            pourcentage_neutre = ((row.get('total_neutres', 0) or 0) / total_elements) * 100
-
-            global_metrics.append({
-                'Question': question_courte,
-                'Positif': float(pourcentage_positif),
-                'Négatif': float(pourcentage_negatif),
-                'Neutre': float(pourcentage_neutre),
-                'Score_Idees': float(row.get('moyenne_sentiment_idees', 0)) if row.get('moyenne_sentiment_idees') is not None else 0,
-                'Score_Commentaires': float(row.get('moyenne_sentiment_commentaires', 0)) if row.get('moyenne_sentiment_commentaires') is not None else 0
-            })
-
-    if global_metrics:
-        df_global = pd.DataFrame(global_metrics)
-
-        # Graphique empilé des pourcentages
-        df_melted = df_global.melt(
-            id_vars=['Question'],
-            value_vars=['Positif', 'Négatif', 'Neutre'],
-            var_name='Sentiment',
-            value_name='Pourcentage'
-        )
-
-        stacked_chart = alt.Chart(df_melted).mark_bar().encode(
-            x=alt.X('Question:N', axis=alt.Axis(labelAngle=-45)),
-            y=alt.Y('Pourcentage:Q', title='Pourcentage (%)'),
-            color=alt.Color('Sentiment:N',
-                          scale=alt.Scale(domain=['Positif', 'Neutre', 'Négatif'],
-                                        range=['#2ca02c', '#ff7f0e', '#d62728'])),
-            tooltip=['Question:N', 'Sentiment:N', 'Pourcentage:Q']
-        ).properties(
-            width=700,
-            height=400,
-            title="Répartition des Sentiments par Question (%)"
-        )
-
-        st.altair_chart(stacked_chart, use_container_width=True)
-
-        # Tableau de synthèse
-        st.markdown("### 📊 Tableau de Synthèse")
-        st.dataframe(df_global.round(2), use_container_width=True)
-
 def display_home_page():
     """Affiche la page d'accueil avec HTML moderne et élégant"""
 
@@ -1121,17 +1073,6 @@ def display_home_page():
             overflow: hidden;
         }
 
-        .hero-section::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><polygon fill="rgba(255,255,255,0.1)" points="0,1000 1000,0 1000,1000"/></svg>');
-            background-size: cover;
-        }
-
         .hero-content {
             position: relative;
             z-index: 2;
@@ -1142,15 +1083,6 @@ def display_home_page():
             font-weight: 700;
             margin-bottom: 1rem;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .hero-subtitle {
-            font-size: 1.3rem;
-            font-weight: 400;
-            opacity: 0.95;
-            max-width: 600px;
-            margin: 0 auto;
-            line-height: 1.6;
         }
 
         /* Features Grid */
@@ -1167,20 +1099,6 @@ def display_home_page():
             padding: 2rem;
             box-shadow: 0 8px 32px rgba(0,0,0,0.1);
             transition: all 0.3s ease;
-            border: 1px solid rgba(255,255,255,0.18);
-            backdrop-filter: blur(10px);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .feature-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, #667eea, #764ba2);
         }
 
         .feature-card:hover {
@@ -1188,60 +1106,13 @@ def display_home_page():
             box-shadow: 0 16px 48px rgba(0,0,0,0.15);
         }
 
-        .feature-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        .feature-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #2d3748;
-            margin-bottom: 1rem;
-        }
-
-        .feature-description {
-            color: #718096;
-            line-height: 1.6;
-            font-size: 0.95rem;
-        }
-
-        /* Stats Section */
-        .stats-section {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            border-radius: 20px;
-            padding: 3rem 2rem;
-            margin: 3rem 0;
+        /* Admin Section */
+        .admin-section {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 16px;
+            padding: 2rem;
+            margin: 2rem 0;
             color: white;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 2rem;
-            margin-top: 2rem;
-        }
-
-        .stat-card {
-            text-align: center;
-            background: rgba(255,255,255,0.2);
-            border-radius: 12px;
-            padding: 2rem 1rem;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.3);
-        }
-
-        .stat-number {
-            font-size: 3rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .stat-label {
-            font-size: 1rem;
-            font-weight: 500;
-            opacity: 0.9;
         }
 
         /* About Section */
@@ -1260,102 +1131,18 @@ def display_home_page():
             margin-bottom: 2rem;
             text-align: center;
         }
-
-        .about-content {
-            font-size: 1.1rem;
-            line-height: 1.8;
-            color: #4a5568;
-        }
-
-        .about-list {
-            list-style: none;
-            padding: 0;
-            margin: 2rem 0;
-        }
-
-        .about-list li {
-            padding: 0.5rem 0;
-            padding-left: 2rem;
-            position: relative;
-        }
-
-        .about-list li::before {
-            content: '✨';
-            position: absolute;
-            left: 0;
-            top: 0.5rem;
-        }
-
-        /* Admin Section */
-        .admin-section {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            border-radius: 16px;
-            padding: 2rem;
-            margin: 2rem 0;
-            color: white;
-        }
-
-        .admin-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-
-        /* Footer */
-        .footer-section {
-            text-align: center;
-            margin-top: 4rem;
-            padding: 2rem;
-            color: #718096;
-            border-top: 1px solid #e2e8f0;
-        }
-
-        .footer-section p {
-            margin: 0.5rem 0;
-        }
-
-        /* Animations */
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .animate-fade-in {
-            animation: fadeInUp 0.6s ease-out forwards;
-        }
-
-        /* Image Upload Styling */
-        .upload-area {
-            border: 2px dashed #cbd5e0;
-            border-radius: 12px;
-            padding: 2rem;
-            text-align: center;
-            background: #f7fafc;
-            transition: all 0.3s ease;
-        }
-
-        .upload-area:hover {
-            border-color: #4facfe;
-            background: #edf2f7;
-        }
     </style>
     """, unsafe_allow_html=True)
 
     # Hero Section
     st.markdown("""
     <div class="main-container">
-        <div class="hero-section animate-fade-in">
+        <div class="hero-section">
             <div class="hero-content">
                 <h1 class="hero-title">🗳️ QUE VOULONS NOUS POUR L'AFRIQUE </h1>
                 <p style="text-align: justify; font-size: 1.2rem; opacity: 0.9;">
                     Plateforme Citoyenne de Vote qui explore les priorités sociales, politiques et économiques des Africains via une plateforme interactive
-                    où les participants peuvent proposer, évaluer, et classer des idées pour l’avenir du continent.
+                    où les participants peuvent proposer, évaluer, et classer des idées pour l'avenir du continent.
                 </p>
             </div>
         </div>
@@ -1363,105 +1150,39 @@ def display_home_page():
     """, unsafe_allow_html=True)
 
     # Section d'upload d'image pour l'admin
-    # MODIFICATION ICI : Seul "yinnaasome@gmail.com" peut voir cette section
     if st.session_state.get("auth") and st.session_state.get("email") == "yinnaasome@gmail.com":
         st.markdown("""
         <div class="admin-section">
-            <h3 class="admin-title">🛠️ Administration - Gestion des Médias</h3>
+            <h3>🛠️ Administration - Gestion des Médias</h3>
             <p>En tant qu'administrateur, vous pouvez télécharger des images pour illustrer les objectifs de la plateforme.</p>
         </div>
         """, unsafe_allow_html=True)
 
         with st.expander("🖼️ Gérer les images de la plateforme", expanded=False):
-            col1, col2 = st.columns([2, 1])
+            uploaded_file = st.file_uploader(
+                "Télécharger une image (objectifs de la plateforme)",
+                type=["jpg", "png", "jpeg"]
+            )
 
-            with col1:
-                uploaded_file = st.file_uploader(
-                    "Télécharger une image (objectifs de la plateforme)",
-                    type=["jpg", "png", "jpeg"],
-                    help="L'image sera utilisée pour illustrer les objectifs de la plateforme"
-                )
-
-                if uploaded_file is not None:
-                    try:
-                        img = Image.open(uploaded_file)
-                        # Redimensionner l'image si nécessaire
-                        if img.width > 800:
-                            img = img.resize((800, int(img.height * 800 / img.width)))
-
-                        st.image(img, caption="Aperçu de l'image téléchargée", use_column_width=True)
-
-                        # Bouton pour sauvegarder
-                        if st.button("💾 Sauvegarder cette image"):
-                            # Ici vous pourriez sauvegarder l'image dans votre base de données
-                            # ou dans un système de fichiers
-                            st.success("✅ Image sauvegardée avec succès!")
-                    except Exception as e:
-                        st.error(f"❌ Erreur lors du traitement de l'image: {e}")
-
-            with col2:
-                st.markdown("""
-                **💡 Conseils :**
-                - Format recommandé: JPG, PNG
-                - Taille optimale: 800px de largeur
-                - Thème: Démocratie, participation citoyenne
-                - Évitez les images trop chargées
-                """)
-
-    # Features Section
-    st.markdown("""
-    <div class="features-grid">
-        <div class="feature-card animate-fade-in">
-            <div class="feature-icon">✏️</div>
-            <h3 class="feature-title">Créer & Proposer</h3>
-            <p class="feature-description">
-                Formulez vos questions et proposez des idées innovantes.
-                Notre système d'analyse de sentiment évalue automatiquement
-                la tonalité de vos contributions.
-            </p>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Statistics Section
-    try:
-        db = get_db_connection()
-
-        total_questions = db.question.count_documents({})
-        total_idees = db.idees.count_documents({})
-        total_votes = db.vote.count_documents({})
-        total_commentaires = db.commentaire.count_documents({})
-
-        st.markdown(f"""
-        <div class="stats-section animate-fade-in">
-            <h2 style="text-align: center; font-size: 2.5rem; margin-bottom: 1rem;">
-                📈 Impact de Notre Communauté
-            </h2>
-            <p style="text-align: center; font-size: 1.2rem; opacity: 0.9;">
-                Découvrez l'engagement citoyen en temps réel
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    except Exception as e:
-        st.warning("⚠️ Impossible de charger les statistiques en temps réel")
+            if uploaded_file is not None:
+                try:
+                    img = Image.open(uploaded_file)
+                    if img.width > 800:
+                        img = img.resize((800, int(img.height * 800 / img.width)))
+                    st.image(img, caption="Aperçu de l'image téléchargée", use_column_width=True)
+                    if st.button("💾 Sauvegarder cette image"):
+                        st.success("✅ Image sauvegardée avec succès!")
+                except Exception as e:
+                    st.error(f"❌ Erreur lors du traitement de l'image: {e}")
 
     # About Section
     st.markdown("""
-    <div class="about-section animate-fade-in">
+    <div class="about-section">
         <h2 class="about-title">🎯 Notre Mission</h2>
-        <div class="about-content">
-            <p style="text-align: justify; font-size: 1.2rem; opacity: 0.9;">
+        <div>
+            <p style="text-align: justify; font-size: 1.2rem;">
                 Faciliter un dialogue inclusif et constructif. Créez une plateforme en ligne qui permette à chaque citoyen africain,
                 quel que soit son niveau d'éducation ou son lieu de résidence, de partager ses idées pour l'avenir de l'Afrique.
-                Encourager la proposition d'idées novatrices. Au-delà des sujets traditionnels, incitez les participants à soumettre des idées audacieuses
-                et créatives qui répondent aux défis contemporains, qu'ils soient climatiques, économiques ou sociaux. 
-                Mettez en place un système où les participants peuvent, en quelques mots, exprimer une solution qu'ils jugent prioritaire.
-                Permettre une évaluation transparente et collaborative. Plutôt que de demander aux participants de classer des listes d'idées,
-                présentez-leur deux idées à la fois et demandez-leur de choisir celle qui leur semble la plus importante.
-                Ce format de "comparaison par paires" est intuitif et réduit le biais, permettant de révéler de manière transparente 
-                les préférences collectives.
-                Synthétiser et diffuser les résultats. Une fois les données collectées, analysez les préférences et classez les idées proposées. 
-                Présentez ces résultats de manière claire et  concise 
                 Rejoignez notre communauté grandissante de citoyens engagés et
                 contribuez à façonner un avenir plus démocratique et inclusif.
             </p>
@@ -1469,309 +1190,7 @@ def display_home_page():
     </div>
     """, unsafe_allow_html=True)
 
-    # Footer
-    st.markdown("""
-    <div class="footer-section">
-        <p><strong>🌍 Wiki Survey - Démocratie Participative</strong></p>
-        <p>Propulsé par l'intelligence artificielle et l'engagement citoyen</p>
-        <p style="font-size: 0.8rem; opacity: 0.7;">
-            © 2024 - Plateforme open-source pour la participation citoyenne
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-def afficher_dashboard_admin():
-    """Dashboard administrateur avec gestion avancée"""
-    if not st.session_state.get("auth") or st.session_state.get("email") != "admin@test.com":
-        st.error("🚫 Accès réservé aux administrateurs")
-        return
-
-    st.title("🛠️ Dashboard Administrateur")
-
-    # Onglets pour organiser les fonctionnalités admin
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Vue d'ensemble",
-        "👥 Gestion Utilisateurs",
-        "🗑️ Modération",
-        "📈 Analytics Avancées"
-    ])
-
-    db = get_db_connection()
-
-    with tab1:
-        afficher_overview_admin(db)
-
-    with tab2:
-        afficher_gestion_utilisateurs(db)
-
-    with tab3:
-        afficher_moderation(db)
-
-    with tab4:
-        afficher_analytics_avancees(db)
-
-def afficher_overview_admin(db):
-    """Vue d'ensemble des statistiques administrateur"""
-    st.subheader("📊 Vue d'ensemble de la plateforme")
-
-    # Métriques principales
-    col1, col2, col3, col4 = st.columns(4)
-
-    total_questions = db.question.count_documents({})
-    total_users = db.navigateur.count_documents({})
-    total_votes_today = db.vote.count_documents({
-        "date_vote": {"$gte": datetime.now() - timedelta(days=1)}
-    })
-    total_idees_users = db.idees.count_documents({"creer_par_utilisateur": "oui"})
-
-    with col1:
-        st.metric("📝 Questions Totales", total_questions)
-    with col2:
-        st.metric("👥 Utilisateurs Actifs", total_users)
-    with col3:
-        st.metric("🗳️ Votes (24h)", total_votes_today)
-    with col4:
-        st.metric("💡 Idées Utilisateurs", total_idees_users)
-
-    # Graphiques d'évolution
-    st.subheader("📈 Évolution de l'activité")
-
-    # Activité des 30 derniers jours
-    pipeline_activity = [
-        {"$match": {
-            "date_vote": {"$gte": datetime.now() - timedelta(days=30)}
-        }},
-        {"$group": {
-            "_id": {
-                "$dateToString": {
-                    "format": "%Y-%m-%d",
-                    "date": "$date_vote"
-                }
-            },
-            "count": {"$sum": 1}
-        }},
-        {"$sort": {"_id": 1}}
-    ]
-
-    activity_data = list(db.vote.aggregate(pipeline_activity))
-
-    if activity_data:
-        df_activity = pd.DataFrame(activity_data)
-        df_activity.columns = ['Date', 'Votes']
-        df_activity['Date'] = pd.to_datetime(df_activity['Date'])
-
-        chart_activity = alt.Chart(df_activity).mark_area(
-            color='#4facfe',
-            opacity=0.7,
-            interpolate='cardinal'
-        ).encode(
-            x=alt.X('Date:T', title='Date'),
-            y=alt.Y('Votes:Q', title='Nombre de votes'),
-            tooltip=['Date:T', 'Votes:Q']
-        ).properties(
-            width=700,
-            height=300,
-            title="Évolution des votes (30 derniers jours)"
-        )
-
-        st.altair_chart(chart_activity, use_container_width=True)
-
-def afficher_gestion_utilisateurs(db):
-    """Interface de gestion des utilisateurs"""
-    st.subheader("👥 Gestion des Utilisateurs")
-
-    # Statistiques des profils
-    profils = list(db.profil.aggregate([
-        {"$group": {
-            "_id": "$pays",
-            "count": {"$sum": 1},
-            "age_moyen": {"$avg": "$age"}
-        }},
-        {"$sort": {"count": -1}}
-    ]))
-
-    if profils:
-        st.markdown("### 🌍 Répartition par pays")
-        df_pays = pd.DataFrame(profils)
-        df_pays.columns = ['Pays', 'Nombre', 'Age_Moyen']
-
-        chart_pays = alt.Chart(df_pays.head(10)).mark_bar().encode(
-            x=alt.X('Nombre:Q'),
-            y=alt.Y('Pays:N', sort='-x'),
-            color=alt.Color('Nombre:Q', scale=alt.Scale(scheme='viridis')),
-            tooltip=['Pays:N', 'Nombre:Q', 'Age_Moyen:Q']
-        ).properties(
-            width=600,
-            height=400,
-            title="Top 10 des pays participants"
-        )
-
-        st.altair_chart(chart_pays, use_container_width=True)
-
-    # Recherche d'utilisateurs
-    st.markdown("### 🔍 Recherche d'utilisateurs")
-    search_term = st.text_input("Rechercher par pays, fonction, etc.")
-
-    if search_term:
-        users = list(db.profil.find({
-            "$or": [
-                {"pays": {"$regex": search_term, "$options": "i"}},
-                {"fonction": {"$regex": search_term, "$options": "i"}}
-            ]
-        }).limit(20))
-
-        if users:
-            df_users = pd.DataFrame(users)
-            if not df_users.empty:
-                st.dataframe(
-                    df_users[['pays', 'age', 'sexe', 'fonction', 'date_creation']],
-                    use_container_width=True
-                )
-
-def afficher_moderation(db):
-    """Interface de modération du contenu"""
-    st.subheader("🗑️ Modération du Contenu")
-
-    # Contenu à modérer (sentiment très négatif)
-    st.markdown("### ⚠️ Contenu nécessitant une attention")
-
-    contenu_negatif = list(db.idees.find({
-        "sentiment_score": {"$lt": -0.5}
-    }).sort("sentiment_score", 1).limit(10))
-
-    if contenu_negatif:
-        for idx, idee in enumerate(contenu_negatif):
-            with st.expander(f"Idée #{idx+1} - Score: {idee.get('sentiment_score', 0):.3f}"):
-                st.write(f"**Texte:** {idee['idee_texte']}")
-                st.write(f"**Sentiment:** {idee.get('sentiment_label', 'Non analysé')}")
-                st.write(f"**Date:** {idee.get('date_creation', 'Inconnue')}")
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    if st.button(f"✅ Approuver #{idx+1}", key=f"approve_{idee['_id']}"):
-                        st.success("Contenu approuvé")
-
-                with col2:
-                    if st.button(f"⚠️ Signaler #{idx+1}", key=f"flag_{idee['_id']}"):
-                        st.warning("Contenu signalé pour review")
-
-                with col3:
-                    if st.button(f"🗑️ Supprimer #{idx+1}", key=f"delete_{idee['_id']}"):
-                        # Ici vous pouvez implémenter la suppression
-                        st.error("Contenu marqué pour suppression")
-    else:
-        st.success("🎉 Aucun contenu nécessitant une modération urgente")
-
-    # Statistiques de modération
-    st.markdown("### 📊 Statistiques de Sentiment")
-
-    sentiment_stats = list(db.idees.aggregate([
-        {"$group": {
-            "_id": "$sentiment_label",
-            "count": {"$sum": 1},
-            "avg_score": {"$avg": "$sentiment_score"}
-        }}
-    ]))
-
-    if sentiment_stats:
-        df_sentiment_stats = pd.DataFrame(sentiment_stats)
-        df_sentiment_stats.columns = ['Sentiment', 'Nombre', 'Score_Moyen']
-        st.dataframe(df_sentiment_stats, use_container_width=True)
-
-def afficher_analytics_avancees(db):
-    """Analytics avancées pour les administrateurs"""
-    st.subheader("📈 Analytics Avancées")
-
-    # Analyse temporelle
-    st.markdown("### ⏰ Analyse Temporelle")
-
-    # Activité par heure
-    pipeline_heure = [
-        {"$project": {
-            "heure": {"$hour": "$date_creation"}
-        }},
-        {"$group": {
-            "_id": "$heure",
-            "count": {"$sum": 1}
-        }},
-        {"$sort": {"_id": 1}}
-    ]
-
-    activite_heure = list(db.idees.aggregate(pipeline_heure))
-
-    if activite_heure:
-        df_heure = pd.DataFrame(activite_heure)
-        df_heure.columns = ['Heure', 'Activite']
-
-        chart_heure = alt.Chart(df_heure).mark_bar().encode(
-            x=alt.X('Heure:O', title='Heure de la journée'),
-            y=alt.Y('Activite:Q', title='Nombre d\'idées'),
-            color=alt.Color('Activite:Q', scale=alt.Scale(scheme='blues')),
-            tooltip=['Heure:O', 'Activite:Q']
-        ).properties(
-            width=700,
-            height=300,
-            title="Activité par heure de la journée"
-        )
-
-        st.altair_chart(chart_heure, use_container_width=True)
-
-    # Corrélation sentiment vs engagement
-    st.markdown("### 🔗 Corrélation Sentiment vs Engagement")
-
-    pipeline_correlation = [
-        {"$lookup": {
-            "from": "vote",
-            "let": {"idee_id": "$_id"},
-            "pipeline": [
-                {"$match": {
-                    "$expr": {
-                        "$or": [
-                            {"$eq": ["$id_idee_gagnant", "$$idee_id"]},
-                            {"$eq": ["$id_idee_perdant", "$$idee_id"]}
-                        ]
-                    }
-                }}
-            ],
-            "as": "votes"
-        }},
-        {"$project": {
-            "sentiment_score": 1,
-            "sentiment_label": 1,
-            "idee_texte": 1,
-            "nombre_votes": {"$size": "$votes"}
-        }},
-        {"$match": {
-            "sentiment_score": {"$exists": True},
-            "nombre_votes": {"$gt": 0}
-        }}
-    ]
-
-    correlation_data = list(db.idees.aggregate(pipeline_correlation))
-
-    if correlation_data:
-        df_corr = pd.DataFrame(correlation_data)
-
-        # Calculer la corrélation
-        correlation = df_corr['sentiment_score'].corr(df_corr['nombre_votes'])
-
-        st.metric("📊 Coefficient de corrélation", f"{correlation:.3f}")
-
-        scatter_corr = alt.Chart(df_corr).mark_circle(size=100, opacity=0.7).encode(
-            x=alt.X('sentiment_score:Q', title='Score de Sentiment'),
-            y=alt.Y('nombre_votes:Q', title='Nombre de Votes'),
-            color=alt.Color('sentiment_label:N'),
-            tooltip=['idee_texte:N', 'sentiment_score:Q', 'nombre_votes:Q']
-        ).properties(
-            width=600,
-            height=400,
-            title="Corrélation entre Sentiment et Engagement"
-        )
-
-        st.altair_chart(scatter_corr, use_container_width=True)
-
-# === Nouvelle fonction principale avec onglets horizontaux ===
+# === Fonction principale avec onglets horizontaux ===
 def main():
     # Onglets principaux en haut
     onglets_principaux = st.tabs(["🏠 Accueil", "➕ Créer une question", "🗳 Participer au vote", "📈 Voir les Statistiques"])
@@ -1801,7 +1220,6 @@ def main():
         with sous_onglets[2]:
             afficher_statistiques_votes()
 
-
-# === Point d’entrée ===
+# === Point d'entrée ===
 if __name__ == "__main__":
     main()
